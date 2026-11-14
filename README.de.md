@@ -23,8 +23,15 @@ git clone https://github.com/therealMRBK/TeslaCinema.git && cd TeslaCinema && ./
 
 <p align="center"><img src="docs/assets/screenshot.png" alt="Echter Chrome mit Video, gestreamt von TeslaCinema" width="85%"></p>
 
-> ⚠️ **Nur benutzen, wenn das Auto steht.** Nie während der Fahrt ansehen oder bedienen. Du bist selbst dafür
-> verantwortlich, Gesetze und die Nutzungsbedingungen der Dienste einzuhalten.
+> ## ⚠️ HINWEIS: NUR IM STAND. NIEMALS WÄHREND DER FAHRT.
+> **TeslaCinema darf auf gar keinen Fall während der Fahrt benutzt werden.** Das Ansehen von Videos oder das Bedienen eines
+> Bildschirms während der Fahrt ist **in der Europäischen Union gesetzlich verboten** (durch die Straßenverkehrsgesetze der
+> Mitgliedstaaten, in Deutschland zum Beispiel § 23 StVO) und in den meisten anderen Ländern ebenfalls. Außerdem ist es
+> lebensgefährlich.
+> Nutze es **ausschließlich bei stehendem, sicher geparktem Fahrzeug**, zum Beispiel beim Laden, Warten oder in der Pause.
+> Der Fahrer ist immer selbst dafür verantwortlich, das Gesetz einzuhalten und das Fahrzeug sicher zu führen. Die Autoren und
+> Mitwirkenden übernehmen **keine Haftung** für Nutzung entgegen der Verkehrsvorschriften oder für daraus entstehende Unfälle,
+> Schäden, Bußgelder oder Verletzungen. Dies ist keine Rechtsberatung.
 
 ## Was du bekommst
 

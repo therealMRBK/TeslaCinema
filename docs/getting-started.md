@@ -1,5 +1,7 @@
 # Getting started
 
+> ⚠️ **Parked only. Never use TeslaCinema while driving**: it is prohibited by law in the EU and dangerous. See [Using it in the car](using-in-the-car.md).
+
 The shortest path from nothing to a browser on your car screen. About 10 minutes, most of it waiting for the first build.
 
 ## 1. What you need

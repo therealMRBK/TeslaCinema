@@ -15,7 +15,7 @@ A server is always on, has a fast, stable connection, and does not drain your ph
 ### Is it legal?
 TeslaCinema is a remote-browser tool, like any remote desktop. It does not remove or circumvent any protection. What you
 may watch and where is governed by the law where you are and the terms of the services you use: that is your responsibility.
-**Do not use it while driving.**
+**Never use it while driving: in the EU this is prohibited by national road traffic laws, and it is dangerous. Parked only.**
 
 ### Is it safe to put on the internet?
 It is built for that: login on everything, no start without a password, loopback by default. Use https and a long password.

@@ -25,8 +25,14 @@ git clone https://github.com/therealMRBK/TeslaCinema.git && cd TeslaCinema && ./
 
 <p align="center"><img src="docs/assets/screenshot.png" alt="A real Chrome with video, streamed by TeslaCinema" width="85%"></p>
 
-> ⚠️ **Only use it while the car is parked.** Never watch or operate it while driving. You are responsible for
-> following the law and the terms of the services you watch. See [Safety and legal](#safety-and-legal).
+> ## ⚠️ DISCLAIMER: PARKED ONLY. NEVER WHILE DRIVING.
+> **TeslaCinema must never be used while driving.** Watching video or operating a screen while driving is
+> **prohibited by law in the European Union** (through the road traffic laws of its member states, for example § 23 StVO in
+> Germany) and in most other countries. It is also extremely dangerous.
+> Use it **only while the vehicle is stationary and safely parked**: while charging, waiting or on a break.
+> The driver is always fully responsible for complying with the law and for safe operation of the vehicle. The authors and
+> contributors accept **no liability** for any use that violates traffic laws or leads to accidents, damage, fines or
+> injury. This is not legal advice. See [Safety and legal](#safety-and-legal).
 
 ---
 
@@ -121,7 +127,7 @@ Prefer to do it by hand? `cp .env.example .env`, set `AUTH_PASSWORD`, then `dock
 
 ## Safety and legal
 
-- **Parked only.** TeslaCinema is meant for waiting, charging and breaks. Do not use it while driving.
+- **Parked only, by law.** In the EU, using a screen to watch video or browse while driving is prohibited by national road traffic laws, and it is dangerous. TeslaCinema is meant for waiting, charging and breaks, with the vehicle stationary and safely parked. The driver is responsible for obeying the law; the authors accept no liability for misuse. Do not use it on a moving vehicle, and do not let others do so.
 - **Your accounts, your terms.** The server runs an ordinary Chrome and plays whatever you log into. It does not
   remove or bypass any protection. Make sure that what you watch, and where you watch it, is allowed by the terms of
   the services you use.

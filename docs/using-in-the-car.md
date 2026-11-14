@@ -1,6 +1,9 @@
 # Using TeslaCinema in the car
 
-> **Parked only.** Do not use it while driving. You are responsible for following the law where you are.
+> ## ⚠️ Parked only. Never while driving.
+> Watching video or operating a screen while driving is **prohibited by law in the EU** (national road traffic laws, e.g. § 23
+> StVO in Germany) and in most other countries, and it is dangerous. Use TeslaCinema **only with the vehicle stationary and
+> safely parked**. The driver is solely responsible; the authors accept no liability. Not legal advice.
 
 ## Before you go
 

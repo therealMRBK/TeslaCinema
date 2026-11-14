@@ -12,3 +12,4 @@ TeslaCinema grew out of a private remote-browser tool. This is the first standal
 - Configurable language (`LOCALE`, `CHROME_LANG`)
 - Removed from the private tool: the Discord launcher and the terminal button
 - Full documentation in `docs/`
+- Prominent parked-only / no-use-while-driving disclaimer (README, docs and a confirmation notice on the page itself)

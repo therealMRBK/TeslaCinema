@@ -57,9 +57,21 @@
   .panel a { color: #7ab8ff; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .panel .empty { color: #777; padding: 6px 2px; }
   .panel .upload-row { padding-top: 8px; }
+  #parkedNotice { position: fixed; inset: 0; z-index: 100; background: rgba(8,10,16,0.94); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #parkedNotice .box { max-width: 620px; background: #161b2e; border: 2px solid #f59e0b; border-radius: 16px; padding: 28px 32px; text-align: center; }
+  #parkedNotice h2 { margin: 0 0 12px; font-size: 1.6rem; color: #fbbf24; }
+  #parkedNotice p { margin: 0 0 16px; font-size: 1.15rem; line-height: 1.45; }
+  #parkedNotice button { background: #f59e0b; color: #111; border: 0; border-radius: 10px; padding: 14px 28px; font-size: 1.2rem; font-weight: 700; cursor: pointer; }
 </style>
 </head>
 <body>
+<div id="parkedNotice" role="alertdialog" aria-modal="true" aria-labelledby="pnTitle">
+  <div class="box">
+    <h2 id="pnTitle">⚠️ Parked only</h2>
+    <p><strong>Never use this page while driving.</strong> Watching video or operating a screen while driving is prohibited by law in the EU and dangerous. Use it only when the vehicle is stationary and safely parked.</p>
+    <button id="parkedOk">My vehicle is parked</button>
+  </div>
+</div>
 <div class="viewport-wrap">
   <div id="viewport" tabindex="0">
     <canvas id="screen" role="img" aria-label="Remote browser"></canvas>
@@ -703,6 +715,7 @@ uploadInput.addEventListener('change', async () => {
   uploadInput.value = '';
 });
 
+document.getElementById('parkedOk').addEventListener('click', () => { document.getElementById('parkedNotice').remove(); viewport.focus(); });
 viewport.focus();
 
 // --- Touch (the Tesla screen): a tap clicks, dragging scrolls, holding clicks with the right button. Two fingers scroll too. ---
