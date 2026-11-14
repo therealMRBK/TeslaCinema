@@ -60,4 +60,3 @@ docker compose logs cloudflared        # look for https://....trycloudflare.com
   fine, see [GPU](gpu.md).
 - **Windows Firewall.** If you open it on your LAN (`BIND_ADDRESS=0.0.0.0`), Windows may ask to allow Docker Desktop.
 - **Sleep.** Turn off sleep/hibernate while you want to use it in the car.
-- Line endings: if `./setup.sh` complains about `\r`, run `git config core.autocrlf false`, re-clone, and try again.
