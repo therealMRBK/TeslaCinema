@@ -1,0 +1,801 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TeslaCinema</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="theme-color" content="#0b0d12">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: system-ui, sans-serif; background: #1c1c1c; color: #eee;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  /* No toolbar row at all -- it was eating into the video, and the whole
+     point here is filling the browser window. Files access is a small
+     floating button overlaid on the corner instead, not a layout element
+     that reserves space. No padding/centering box either: the remote
+     desktop's actual resolution is kept matched to this container's exact
+     pixel size (see requestResize), so the image fills it edge-to-edge. */
+  .viewport-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+  #viewport { position: absolute; inset: 0; outline: none; }
+  #screen, #avScreen { display: block; width: 100%; height: 100%; background: #000; }
+  #avScreen { position: absolute; inset: 0; }
+  #overlay { touch-action: none; }
+  #kbd { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; }
+  #soundHint {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 22; display: none;
+    background: rgba(20,20,20,0.85); border: 1px solid #555; border-radius: 14px; padding: 18px 28px; font-size: 1.3rem; color: #fff;
+  }
+  #overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; cursor: default; }
+  #btnRow {
+    position: absolute; top: 8px; right: 8px; z-index: 21;
+    display: flex; flex-direction: row-reverse; gap: 8px;
+  }
+  #btnRow button {
+    background: rgba(42,42,42,0.75); color: #eee; border: 1px solid rgba(74,74,74,0.8); border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; font-size: 0.8rem; backdrop-filter: blur(2px); white-space: nowrap;
+  }
+  #btnRow button:hover { background: rgba(69,69,69,0.9); }
+  #soundBtn.active, #micBtn.active, #kbdBtn.active { background: rgba(74,124,74,0.85); border-color: rgba(120,180,120,0.8); }
+  #stats {
+    position: absolute; bottom: 6px; right: 8px; z-index: 21; pointer-events: none;
+    font: 11px ui-monospace, monospace; color: rgba(238,238,238,0.55); background: rgba(0,0,0,0.35); padding: 2px 6px; border-radius: 4px;
+  }
+  .panel {
+    position: absolute; top: 44px; right: 8px; width: 320px; max-height: 60vh; overflow-y: auto;
+    background: #2a2a2a; border: 1px solid #4a4a4a; border-radius: 8px; padding: 10px;
+    font-size: 0.85rem; z-index: 20; display: none; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  .panel.open { display: block; }
+  .panel .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 5px 2px; border-bottom: 1px solid #383838; }
+  .panel .row:last-child { border-bottom: none; }
+  .panel a { color: #7ab8ff; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .panel .empty { color: #777; padding: 6px 2px; }
+  .panel .upload-row { padding-top: 8px; }
+</style>
+</head>
+<body>
+<div class="viewport-wrap">
+  <div id="viewport" tabindex="0">
+    <canvas id="screen" role="img" aria-label="Remote browser"></canvas>
+    <canvas id="avScreen" role="img" aria-label="Remote browser" hidden></canvas>
+    <div id="overlay"></div>
+  </div>
+  <div id="stats"></div>
+  <div id="btnRow">
+    <button id="filesBtn">📁</button>
+    <button id="clipBtn" title="Clipboard: fetch from / send to the remote browser">📋</button>
+    <button id="micBtn" title="Send this device's microphone to the remote browser">🎤</button>
+    <button id="soundBtn" title="Listen to the remote sound">🔊</button>
+    <button id="kbdBtn" title="Keyboard">⌨️</button>
+  </div>
+  <audio id="remoteAudio" preload="none"></audio>
+  <button id="soundHint">🔊 Tap for sound</button>
+  <input id="kbd" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+  <div class="panel" id="filesPanel">
+    <div id="filesList"></div>
+    <div class="upload-row">
+      <input type="file" id="uploadInput" style="width:100%">
+      <p style="color:#888;margin:6px 0 0 0">
+        Uploaded files land in the shared folder - browse to it in any file dialog of the remote browser.
+        Chrome downloads show up here automatically.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script src="/static/jsmpeg.min.js"></script>
+<script>
+const viewport = document.getElementById('viewport');
+const overlay = document.getElementById('overlay');
+const screen = document.getElementById('screen');
+const filesBtn = document.getElementById('filesBtn');
+const filesPanel = document.getElementById('filesPanel');
+const filesList = document.getElementById('filesList');
+const uploadInput = document.getElementById('uploadInput');
+
+let REMOTE_WIDTH = 1920, REMOTE_HEIGHT = 1080;
+fetch('/info').then((r) => r.json()).then((d) => { REMOTE_WIDTH = d.width; REMOTE_HEIGHT = d.height; }).catch(() => {});
+
+// --- Video. The browser asks for frames one answer at a time (server.js: /video/h264, /video/jpeg) and only asks again
+// once it has drawn what it got, so at most one answer is ever on its way - nothing can pile up anywhere in between (the
+// old long multipart stream piled up in the reverse proxy whenever the line was slower than the stream, and the picture
+// fell seconds behind after a short while).
+//
+// H.264 decoded with WebCodecs is the default: 0.2-8 Mbit/s instead of ~36 for JPEG, and the server lowers the bitrate
+// when the line cannot keep up. WebCodecs needs a secure context (https) and a recent browser; without it, or after
+// repeated decoder errors, the page uses JPEG, which simply gets fewer frames per second on a slow line. ?mode=jpeg forces
+// JPEG.
+const screenCanvas = document.getElementById('screen');
+const screenCtx = screenCanvas.getContext('2d');
+const statsEl = document.getElementById('stats');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let drawn = 0;
+let bytes = 0;
+let videoMode = '';
+function drawFrame(source, width, height) {
+  if (screenCanvas.width !== width) screenCanvas.width = width;
+  if (screenCanvas.height !== height) screenCanvas.height = height;
+  screenCtx.drawImage(source, 0, 0);
+  drawn++;
+}
+setInterval(() => {
+  statsEl.textContent = `${videoMode}${videoTransport ? ' (' + videoTransport + ')' : ''} · ${drawn} fps · ${((bytes * 8) / 1e6).toFixed(1)} Mbit/s`;
+  drawn = 0;
+  bytes = 0;
+}, 1000);
+
+async function runJpeg() {
+  videoMode = 'JPEG';
+  let after = 0;
+  for (;;) {
+    try {
+      const res = await fetch(`/video/jpeg?after=${after}`, { cache: 'no-store' });
+      if (res.status === 204) continue;
+      if (!res.ok) { await sleep(1000); continue; }
+      after = parseInt(res.headers.get('X-Seq'), 10) || after;
+      const blob = await res.blob();
+      bytes += blob.size;
+      const bitmap = await createImageBitmap(blob);
+      drawFrame(bitmap, bitmap.width, bitmap.height);
+      bitmap.close();
+    } catch (e) {
+      await sleep(1000);
+    }
+  }
+}
+
+// false: give up on H.264 and use JPEG
+async function runH264() {
+  videoMode = 'H.264';
+  let decoder = null;
+  let codec = null;
+  let epoch = -1;
+  let after = -1;
+  let failed = false;
+  let errors = 0;
+  const newDecoder = (c, width, height) => {
+    if (decoder && decoder.state !== 'closed') decoder.close();
+    failed = false;
+    decoder = new VideoDecoder({
+      output: (frame) => { drawFrame(frame, frame.displayWidth, frame.displayHeight); frame.close(); },
+      error: (e) => { console.error('decoder', e); failed = true; },
+    });
+    decoder.configure({ codec: c, codedWidth: width, codedHeight: height, optimizeForLatency: true });
+  };
+  for (;;) {
+    let res;
+    try {
+      res = await fetch(`/video/h264?after=${after}&epoch=${epoch}`, { cache: 'no-store' });
+    } catch (e) { await sleep(1000); continue; }
+    if (res.status === 204) continue;
+    if (!res.ok) { await sleep(1000); continue; }
+    const c = res.headers.get('X-Codec');
+    const e = parseInt(res.headers.get('X-Epoch'), 10);
+    const width = parseInt(res.headers.get('X-Width'), 10);
+    const height = parseInt(res.headers.get('X-Height'), 10);
+    const buf = new Uint8Array(await res.arrayBuffer());
+    bytes += buf.length;
+    const view = new DataView(buf.buffer);
+    const frames = [];
+    for (let at = 0; at + 9 <= buf.length;) {
+      const length = view.getUint32(at + 5);
+      frames.push({ seq: view.getUint32(at), key: buf[at + 4] === 1, data: buf.subarray(at + 9, at + 9 + length) });
+      at += 9 + length;
+    }
+    if (!frames.length) continue;
+    if (failed) {
+      errors++;
+      if (errors >= 3) return false;
+    }
+    const fresh = !decoder || failed || decoder.state === 'closed' || c !== codec || e !== epoch;
+    if (fresh) {
+      if (!frames[0].key) { after = -1; epoch = -1; continue; }
+      try {
+        const support = await VideoDecoder.isConfigSupported({ codec: c, codedWidth: width, codedHeight: height });
+        if (!support.supported) return false;
+        newDecoder(c, width, height);
+      } catch (err) { console.error(err); return false; }
+      codec = c;
+      epoch = e;
+    }
+    // a skip ahead (frames[0].seq > after + 1) needs nothing here: the keyframe it starts with resets the decoder, and the
+    // server lowers the bitrate when skips keep happening
+    videoMode = `H.264 ${res.headers.get('X-Bitrate') || ''}`;
+    for (const f of frames) {
+      try {
+        decoder.decode(new EncodedVideoChunk({ type: f.key ? 'key' : 'delta', timestamp: f.seq * 1000, data: f.data }));
+      } catch (err) { console.error(err); failed = true; break; }
+    }
+    after = frames[frames.length - 1].seq;
+    // never let the decoder build a queue either
+    while (decoder.decodeQueueSize > 2 && !failed) await sleep(5);
+  }
+}
+
+// --- Picture and sound together (the default here, made for the Tesla browser): /av delivers an MPEG-TS stream of the screen
+// and Chrome's sound from one ffmpeg, fetched one answer at a time like the frames above. JSMpeg decodes it onto a canvas
+// (WebGL) and plays the sound with Web Audio; no <video> element is involved. The sound is the clock: a picture is shown
+// once the sound has reached its moment, so both stay in step. Without running sound the pictures are shown as they come.
+// The stream comes over a WebSocket where the network allows one (pushed, no request per piece: the lowest delay), and over
+// polling otherwise; a socket that does not open within 3 s, or keeps failing, makes the page poll instead.
+class PollSource {
+  constructor(url, options) {
+    this.url = url;
+    this.options = options;
+    this.streaming = true;
+    this.established = false;
+    this.completed = false;
+    this.progress = 0;
+    this.destination = null;
+    this.stopped = false;
+  }
+  connect(destination) { this.destination = destination; }
+  resume() {}
+  destroy() { this.stopped = true; }
+  start() {
+    if (new URLSearchParams(location.search).get('ws') === '0' || !('WebSocket' in window)) return this.poll();
+    this.socket(0);
+  }
+  socket(failures) {
+    let opened = false;
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/avws`);
+    ws.binaryType = 'arraybuffer';
+    const timer = setTimeout(() => { if (!opened) ws.close(); }, 3000);
+    ws.onopen = () => { opened = true; clearTimeout(timer); videoTransport = 'WebSocket'; };
+    ws.onmessage = (e) => {
+      bytes += e.data.byteLength;
+      this.established = true;
+      this.progress = 1;
+      if (this.destination) this.destination.write(e.data);
+    };
+    ws.onclose = () => {
+      clearTimeout(timer);
+      if (this.stopped) return;
+      if (!opened && failures >= 1) return this.poll();
+      setTimeout(() => this.socket(opened ? 0 : failures + 1), 1000);
+    };
+  }
+  async poll() {
+    videoTransport = 'Polling';
+    let after = 0;
+    while (!this.stopped) {
+      try {
+        const res = await fetch(`${this.url}?after=${after}`, { cache: 'no-store' });
+        if (res.status === 204) continue;
+        if (!res.ok) { await sleep(1000); continue; }
+        after = parseInt(res.headers.get('X-Seq'), 10) || after;
+        const data = await res.arrayBuffer();
+        bytes += data.byteLength;
+        if (res.headers.get('X-Jump') === '1') av.jumps++;
+        this.established = true;
+        this.progress = 1;
+        if (this.destination) this.destination.write(data);
+      } catch (e) {
+        await sleep(1000);
+      }
+    }
+  }
+}
+
+const av = { player: null, jumps: 0, muted: false };
+let videoTransport = '';
+function avAudioRunning() {
+  const out = av.player && av.player.audioOut;
+  return !!(out && out.context && out.context.state === 'running' && !av.muted);
+}
+function runAv() {
+  videoMode = 'Tesla A/V';
+  screenCanvas.hidden = true;
+  const canvas = document.getElementById('avScreen');
+  canvas.hidden = false;
+  const player = new JSMpeg.Player('/av', {
+    source: PollSource,
+    canvas,
+    audio: true,
+    video: true,
+    pauseWhenHidden: false,
+    maxAudioLag: 1, // the jitter buffer below keeps the sound short; this only catches a long stall
+    videoBufferSize: 4 * 1024 * 1024,
+    audioBufferSize: 512 * 1024,
+    onVideoDecode: () => { drawn++; },
+  });
+  av.player = player;
+  // Every PES packet of the stream is one picture or one piece of sound (server.js cuts the stream only between whole ones),
+  // so the timestamps the demuxer hands over line up one by one with what the decoders take out.
+  const videoPts = [];
+  const audioPts = [];
+  const track = (decoder, queue) => {
+    const write = decoder.write;
+    decoder.write = function (pts, buffers) {
+      queue.push(pts);
+      return write.call(this, pts, buffers);
+    };
+  };
+  // A small jitter buffer for the sound instead of JSMpeg's own scheduling, which restarts right at "now" after every gap in
+  // the line and so piles up delay until it has to cut the sound off: after a gap the sound starts AUDIO_TARGET later, and
+  // when more than that has piled up it plays a few percent faster until it is back (inaudible, no cut).
+  const AUDIO_TARGET = 0.06;
+  const out = player.audioOut;
+  if (out && out.context) {
+    out.play = function (sampleRate, left, right) {
+      if (!this.enabled) return;
+      if (!this.unlocked) {
+        const ts = JSMpeg.Now();
+        if (this.wallclockStartTime < ts) this.wallclockStartTime = ts;
+        this.wallclockStartTime += left.length / sampleRate;
+        return;
+      }
+      this.gain.gain.value = this.volume;
+      const now = this.context.currentTime;
+      if (this.startTime < now) this.startTime = now + AUDIO_TARGET;
+      const ahead = this.startTime - now;
+      if (ahead > AUDIO_TARGET + 0.15) return; // after a stall: skip a little sound rather than lag behind
+      const buffer = this.context.createBuffer(2, left.length, sampleRate);
+      buffer.getChannelData(0).set(left);
+      buffer.getChannelData(1).set(right);
+      const source = this.context.createBufferSource();
+      source.buffer = buffer;
+      const rate = ahead > AUDIO_TARGET + 0.05 ? 1.05 : ahead > AUDIO_TARGET + 0.02 ? 1.02 : 1;
+      source.playbackRate.value = rate;
+      source.connect(this.destination);
+      source.start(this.startTime);
+      this.startTime += buffer.duration / rate;
+      this.wallclockStartTime = JSMpeg.Now() + (this.startTime - now);
+    };
+  }
+  if (player.video) track(player.video, videoPts);
+  if (player.audio) track(player.audio, audioPts);
+  let soundAt = null; // stream time at the end of the newest sound handed to the speakers
+  // the pictures follow the sound: a picture is shown once the sound being heard has reached its timestamp
+  player.updateForStreaming = function () {
+    if (this.audio) {
+      for (;;) {
+        if (this.audioOut.enqueuedTime > this.maxAudioLag) {
+          this.audioOut.resetEnqueuedTime();
+          this.audioOut.enabled = false;
+        }
+        const before = this.audio.currentTime;
+        if (!this.audio.decode()) break;
+        const pts = audioPts.shift();
+        if (pts !== undefined) soundAt = pts + (this.audio.currentTime - before);
+      }
+      this.audioOut.enabled = true;
+    }
+    if (!this.video) return;
+    const show = () => {
+      if (!this.video.decode()) return false;
+      videoPts.shift();
+      return true;
+    };
+    if (!avAudioRunning() || soundAt === null) {
+      // no sound to follow: everything there is, newest picture last
+      while (show()) {}
+      return;
+    }
+    const ctx = this.audioOut.context;
+    const heard = soundAt - this.audioOut.enqueuedTime - (ctx.baseLatency || 0) - (ctx.outputLatency || 0);
+    // the screen is grabbed on a frame grid, so a picture is on average about a frame late against the sound (measured)
+    while (videoPts.length && videoPts[0] <= heard + 0.05 && show()) {}
+    // a picture far from the sound (a jump in the stream, a stall): do not wait for it
+    if (videoPts.length && Math.abs(videoPts[0] - heard) > 1) while (show()) {}
+  };
+  const hint = document.getElementById('soundHint');
+  const unlock = () => {
+    const ctx = player.audioOut && player.audioOut.context;
+    if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {});
+  };
+  setInterval(() => {
+    const ctx = player.audioOut && player.audioOut.context;
+    hint.style.display = ctx && ctx.state !== 'running' && !av.muted ? 'block' : 'none';
+  }, 500);
+  hint.addEventListener('click', unlock);
+  document.addEventListener('pointerdown', unlock, true);
+  document.addEventListener('touchstart', unlock, true);
+  document.addEventListener('keydown', unlock, true);
+}
+
+async function runVideo() {
+  const mode = new URLSearchParams(location.search).get('mode');
+  if ((!mode || mode === 'av') && window.JSMpeg) return runAv();
+  const forceJpeg = mode === 'jpeg';
+  if (!forceJpeg && 'VideoDecoder' in window) {
+    const ok = await runH264().catch((e) => { console.error(e); return false; });
+    if (!ok) console.warn('H.264 not usable here, using JPEG');
+  }
+  await runJpeg();
+}
+runVideo();
+
+// --- The pointer is drawn by this browser itself, in the remote pointer's real shape (server.js: /cursor; the video
+// carries no pointer), so it moves without any delay. ---
+const cursorCanvas = document.createElement('canvas');
+async function runCursor() {
+  let after = 0;
+  for (;;) {
+    try {
+      const res = await fetch(`/cursor?after=${after}`, { cache: 'no-store' });
+      if (res.status === 204) continue;
+      if (!res.ok) { await sleep(2000); continue; }
+      const c = await res.json();
+      after = c.version;
+      if (!c.w || !c.h) { overlay.style.cursor = 'none'; continue; }
+      cursorCanvas.width = c.w;
+      cursorCanvas.height = c.h;
+      const pixels = new Uint8ClampedArray(c.w * c.h * 4);
+      for (let i = 0; i < pixels.length; i++) pixels[i] = parseInt(c.rgba.substr(i * 2, 2), 16);
+      cursorCanvas.getContext('2d').putImageData(new ImageData(pixels, c.w, c.h), 0, 0);
+      overlay.style.cursor = `url(${cursorCanvas.toDataURL()}) ${c.xhot} ${c.yhot}, default`;
+    } catch (e) {
+      await sleep(2000);
+    }
+  }
+}
+runCursor();
+
+// --- Input: one request in flight at a time, everything that happens meanwhile is collected and sent with the next one -
+// moves merged into the newest position, typed characters into one string, wheel steps added up. However slow the line,
+// input can never queue up: the remote pointer jumps straight to where the mouse is now. ---
+const inputQueue = [];
+let inputInFlight = false;
+function sendInput(ev) {
+  const last = inputQueue[inputQueue.length - 1];
+  if (last && last.t === ev.t && ev.t === 'move') Object.assign(last, ev);
+  else if (last && last.t === ev.t && ev.t === 'type') last.text += ev.text;
+  else if (last && last.t === ev.t && ev.t === 'wheel') { last.dx += ev.dx; last.dy += ev.dy; }
+  else inputQueue.push(ev);
+  flushInput();
+}
+async function flushInput() {
+  if (inputInFlight || !inputQueue.length) return;
+  inputInFlight = true;
+  const events = inputQueue.splice(0);
+  try {
+    await fetch('/input', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ events }) });
+  } catch (e) {}
+  inputInFlight = false;
+  flushInput();
+}
+
+async function post(path, body) {
+  try {
+    const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+    return await res.json().catch(() => null);
+  } catch (e) { console.error(path, e); return null; }
+}
+
+// Keeps the *actual remote desktop resolution* matched to this container's
+// real pixel size (a genuine xrandr mode switch server-side, see /resize in
+// server.js) -- not a CSS scale of a fixed-size stream. That's what makes
+// this "fill the browser window" rather than a shrunk/letterboxed video:
+// text stays crisp because the remote is rendering at exactly the size
+// it's displayed at. ffmpeg has to restart to change capture size, so this
+// is debounced -- don't fire on every pixel of a drag-resize.
+let resizeTimer;
+function requestResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(async () => {
+    const rect = viewport.getBoundingClientRect();
+    const width = Math.floor(rect.width);
+    const height = Math.floor(rect.height);
+    if (width < 100 || height < 100) return;
+    if (Math.abs(width - REMOTE_WIDTH) < 10 && Math.abs(height - REMOTE_HEIGHT) < 10) return;
+    const data = await post('/resize', { width, height });
+    if (data?.ok) {
+      REMOTE_WIDTH = data.width;
+      REMOTE_HEIGHT = data.height;
+    }
+  }, 400);
+}
+new ResizeObserver(requestResize).observe(viewport);
+requestResize();
+
+// The image always fills the container exactly (CSS width/height: 100%,
+// see #screen) once resize has matched the remote resolution to it -- map
+// click coordinates through the *current* rendered-box-to-remote-pixel
+// ratio regardless, so input stays correct during the brief window before
+// a resize has been applied.
+function remoteCoords(e) {
+  const rect = overlay.getBoundingClientRect();
+  const scaleX = REMOTE_WIDTH / rect.width;
+  const scaleY = REMOTE_HEIGHT / rect.height;
+  return {
+    x: Math.round((e.clientX - rect.left) * scaleX),
+    y: Math.round((e.clientY - rect.top) * scaleY),
+  };
+}
+
+const buttonName = (e) => (e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left');
+overlay.addEventListener('mousemove', (e) => sendInput({ t: 'move', ...remoteCoords(e) }));
+overlay.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  viewport.focus();
+  sendInput({ t: 'down', ...remoteCoords(e), b: buttonName(e) });
+});
+overlay.addEventListener('mouseup', (e) => {
+  e.preventDefault();
+  sendInput({ t: 'up', b: buttonName(e) });
+});
+overlay.addEventListener('contextmenu', (e) => e.preventDefault());
+overlay.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  sendInput({ t: 'wheel', dx: e.deltaX, dy: e.deltaY });
+}, { passive: false });
+
+const NAMED_KEYS = new Set([
+  'Enter', 'Backspace', 'Tab', 'Escape', 'Delete', 'Home', 'End',
+  'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Insert', 'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12',
+]);
+// --- Clipboard sync. Ctrl+V first copies this device's clipboard to the
+// remote one and only then sends the key; Ctrl+C / Ctrl+X pull the remote
+// clipboard back afterwards. The 📋 button does both directions on demand. ---
+async function pushClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) await post('/clipboard', { text });
+    return true;
+  } catch (e) { return false; }
+}
+async function pullClipboard() {
+  try {
+    const res = await fetch('/clipboard');
+    const { text } = await res.json();
+    if (text) await navigator.clipboard.writeText(text);
+    return !!text;
+  } catch (e) { return false; }
+}
+document.getElementById('clipBtn').addEventListener('click', async () => {
+  // local text wins when it differs from the remote one, otherwise take the remote
+  let remote = '';
+  try { remote = (await (await fetch('/clipboard')).json()).text || ''; } catch (e) {}
+  let local = '';
+  try { local = await navigator.clipboard.readText(); } catch (e) {}
+  if (local && local !== remote) await post('/clipboard', { text: local });
+  else if (remote) await navigator.clipboard.writeText(remote).catch(() => {});
+  viewport.focus();
+});
+
+// Automatic sync by polling (no WebSockets): once a second, while this tab has
+// focus, whichever side changed since the last round is copied to the other.
+// `synced` is the text both sides last agreed on, which stops ping-pong.
+let synced = null;
+async function autoSyncClipboard() {
+  if (!document.hasFocus()) return;
+  try {
+    const [local, remote] = await Promise.all([
+      navigator.clipboard.readText().catch(() => null),
+      fetch('/clipboard').then((r) => r.json()).then((d) => d.text || '').catch(() => null),
+    ]);
+    if (local === null || remote === null) return;
+    if (synced === null) { synced = local === remote ? local : remote; if (local === remote) return; }
+    if (local !== synced && local !== remote) { if (local) { await post('/clipboard', { text: local }); } synced = local; }
+    else if (remote !== synced && remote !== local) { if (remote) await navigator.clipboard.writeText(remote); synced = remote; }
+    else synced = local === remote ? local : synced;
+  } catch (e) {}
+}
+setInterval(autoSyncClipboard, 1000);
+window.addEventListener('focus', autoSyncClipboard);
+
+viewport.addEventListener('keydown', async (e) => {
+  e.preventDefault();
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'v' || e.key === 'V')) { await pushClipboard(); await autoSyncClipboard(); }
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && ['c', 'C', 'x', 'X'].includes(e.key)) setTimeout(pullClipboard, 250);
+  const mods = [];
+  if (e.ctrlKey) mods.push('Control');
+  if (e.metaKey) mods.push('Meta');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey && (mods.length || NAMED_KEYS.has(e.key))) mods.push('Shift');
+
+  if (mods.length > 0) {
+    const keyName = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+    sendInput({ t: 'key', key: [...mods, keyName].join('+') });
+    return;
+  }
+  if (NAMED_KEYS.has(e.key)) {
+    sendInput({ t: 'key', key: e.key });
+    return;
+  }
+  if (e.key.length === 1) {
+    sendInput({ t: 'type', text: e.key });
+  }
+});
+
+async function pollFiles() {
+  try {
+    const res = await fetch('/files');
+    const list = await res.json();
+    filesList.innerHTML = list.length
+      ? list.map((f) => `<div class="row"><a href="/files/${encodeURIComponent(f.name)}" download>${f.name}</a></div>`).join('')
+      : '<div class="empty">No files</div>';
+  } catch {}
+  setTimeout(pollFiles, 3000);
+}
+pollFiles();
+
+filesBtn.addEventListener('click', () => filesPanel.classList.toggle('open'));
+
+// --- Audio out: the remote desktop's sound, played back here. A plain
+// <audio> element pointed at GET /audio (a live Ogg/Opus stream, see
+// server.js) -- no WebSocket, no WebRTC, just a long-lived HTTP response
+// the browser decodes incrementally like any other streamed audio file.
+// Autoplay-with-sound needs a user gesture first, which this button click
+// itself satisfies. ---
+const soundBtn = document.getElementById('soundBtn');
+const remoteAudio = document.getElementById('remoteAudio');
+let soundOn = false;
+soundBtn.addEventListener('click', () => {
+  if (av.player) {
+    // with the A/V stream the sound is part of the stream: the button only mutes it
+    av.muted = !av.muted;
+    av.player.volume = av.muted ? 0 : 1;
+    soundBtn.classList.toggle('active', !av.muted);
+    return;
+  }
+  soundOn = !soundOn;
+  soundBtn.classList.toggle('active', soundOn);
+  if (soundOn) {
+    remoteAudio.src = '/audio?' + Date.now(); // cache-bust so a re-enable doesn't reuse a stalled connection
+    remoteAudio.play().catch((e) => console.error('audio play failed', e));
+  } else {
+    remoteAudio.pause();
+    remoteAudio.removeAttribute('src');
+    remoteAudio.load();
+  }
+});
+
+// --- Audio in: this device's real microphone, sent to the remote desktop's
+// virtual microphone (see POST /audio/mic in server.js). One continuous
+// MediaRecorder session feeds a ReadableStream used as a genuinely
+// long-lived streaming fetch request body -- not repeated small POSTs,
+// since webm/opus chunks after the first aren't independently decodable.
+// Needs a browser that supports streaming request bodies (`duplex: "half"`
+// on fetch, e.g. Chrome/Edge 105+). ---
+const micBtn = document.getElementById('micBtn');
+let micStream = null;
+let micRecorder = null;
+micBtn.addEventListener('click', async () => {
+  if (micRecorder) {
+    micRecorder.stop();
+    micStream.getTracks().forEach((t) => t.stop());
+    micRecorder = null;
+    micStream = null;
+    micBtn.classList.remove('active');
+    return;
+  }
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    console.error('Microphone access denied', e);
+    return;
+  }
+  micRecorder = new MediaRecorder(micStream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 64000 });
+  let controller;
+  const body = new ReadableStream({
+    start(c) { controller = c; },
+  });
+  micRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) {
+      e.data.arrayBuffer().then((buf) => {
+        try { controller.enqueue(new Uint8Array(buf)); } catch {}
+      });
+    }
+  };
+  micRecorder.onstop = () => { try { controller.close(); } catch {} };
+  fetch('/audio/mic', { method: 'POST', headers: { 'Content-Type': 'audio/webm' }, body, duplex: 'half' })
+    .catch((e) => console.error('mic stream failed', e));
+  micRecorder.start(250); // 250ms timeslice -- frequent enough for low latency, not so frequent it's mostly overhead
+  micBtn.classList.add('active');
+});
+
+uploadInput.addEventListener('change', async () => {
+  const file = uploadInput.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  await fetch('/files', { method: 'POST', body: form });
+  uploadInput.value = '';
+});
+
+viewport.focus();
+
+// --- Touch (the Tesla screen): a tap clicks, dragging scrolls, holding clicks with the right button. Two fingers scroll too. ---
+(() => {
+  let start = null;
+  let last = null;
+  let moved = false;
+  let holdTimer = null;
+  const at = (t) => ({ clientX: t.clientX, clientY: t.clientY });
+  overlay.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const t = e.touches[0];
+    start = last = at(t);
+    moved = false;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => {
+      if (moved || !start) return;
+      const p = remoteCoords(start);
+      sendInput({ t: 'down', ...p, b: 'right' });
+      sendInput({ t: 'up', b: 'right' });
+      start = null;
+    }, 650);
+    sendInput({ t: 'move', ...remoteCoords(start) });
+  }, { passive: false });
+  overlay.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!start) return;
+    const t = at(e.touches[0]);
+    if (!moved && Math.hypot(t.clientX - start.clientX, t.clientY - start.clientY) < 12) return;
+    moved = true;
+    clearTimeout(holdTimer);
+    const dx = last.clientX - t.clientX;
+    const dy = last.clientY - t.clientY;
+    // one wheel step is about 50 px of finger travel
+    if (Math.abs(dy) >= 25 || Math.abs(dx) >= 25) {
+      sendInput({ t: 'wheel', dx: Math.abs(dx) >= 25 ? dx * 2 : 0, dy: Math.abs(dy) >= 25 ? dy * 2 : 0 });
+      last = t;
+    }
+  }, { passive: false });
+  overlay.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    clearTimeout(holdTimer);
+    if (start && !moved) {
+      const p = remoteCoords(start);
+      sendInput({ t: 'down', ...p, b: 'left' });
+      sendInput({ t: 'up', b: 'left' });
+    }
+    start = null;
+  }, { passive: false });
+})();
+
+// --- The car's on-screen keyboard only opens for a text field: ⌨️ focuses a hidden one, and what is typed there goes on. ---
+// It also opens by itself when a text field in the remote Chrome gets the focus, and closes when the field loses it (server.js:
+// /focus). Closed by hand it stays closed until the next field.
+const kbd = document.getElementById('kbd');
+const kbdBtn = document.getElementById('kbdBtn');
+const keyboardOpen = () => document.activeElement === kbd;
+function setKeyboard(open) {
+  if (open && !keyboardOpen()) kbd.focus();
+  else if (!open && keyboardOpen()) { kbd.blur(); viewport.focus(); }
+  kbdBtn.classList.toggle('active', open);
+}
+// pressing the button must not take the focus from the field first, or it reads "closed" and opens it again
+kbdBtn.addEventListener('pointerdown', (e) => e.preventDefault());
+kbdBtn.addEventListener('mousedown', (e) => e.preventDefault());
+kbdBtn.addEventListener('click', () => setKeyboard(!keyboardOpen()));
+kbd.addEventListener('blur', () => kbdBtn.classList.remove('active'));
+(async function watchFocus() {
+  let after = 0;
+  for (;;) {
+    try {
+      const res = await fetch(`/focus?after=${after}`, { cache: 'no-store' });
+      if (res.status === 204) continue;
+      if (!res.ok) { await sleep(2000); continue; }
+      const s = await res.json();
+      after = s.version;
+      if (s.editable === true) setKeyboard(true);
+      else if (s.editable === false) setKeyboard(false);
+    } catch (e) {
+      await sleep(2000);
+    }
+  }
+})();
+kbd.addEventListener('keydown', (e) => {
+  e.stopPropagation();
+  if (NAMED_KEYS.has(e.key) && e.key !== 'Backspace') { e.preventDefault(); sendInput({ t: 'key', key: e.key }); }
+});
+kbd.addEventListener('beforeinput', (e) => {
+  e.preventDefault();
+  if (e.inputType === 'deleteContentBackward') sendInput({ t: 'key', key: 'Backspace' });
+  else if (e.inputType === 'insertLineBreak') sendInput({ t: 'key', key: 'Enter' });
+  else if (e.data) sendInput({ t: 'type', text: e.data });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="TeslaCinema - your own streaming browser for the car screen">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b0d12"/><stop offset="1" stop-color="#161b2e"/></linearGradient>
+    <linearGradient id="ac" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
+    <linearGradient id="tx" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+    <radialGradient id="glow" cx="0.18" cy="0.5" r="0.55"><stop offset="0" stop-color="#8b5cf6" stop-opacity="0.35"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.04"/></pattern>
+  </defs>
+  <rect width="1280" height="400" rx="28" fill="url(#bg)"/>
+  <rect width="1280" height="400" rx="28" fill="url(#grid)"/>
+  <rect width="1280" height="400" rx="28" fill="url(#glow)"/>
+  <!-- mark -->
+  <g transform="translate(84 84) scale(1.2)">
+    <rect width="256" height="256" rx="58" fill="#0a0c12" stroke="#ffffff" stroke-opacity="0.08"/>
+    <path d="M34 92 Q128 60 222 92 L222 164 Q128 196 34 164 Z" fill="#0d1019" stroke="url(#ac)" stroke-width="10" stroke-linejoin="round"/>
+    <path d="M110 108 L110 148 Q110 154 115.5 151 L152 130.5 Q157 127.5 152 124.5 L115.5 105 Q110 102 110 108 Z" fill="url(#ac)" stroke="url(#ac)" stroke-width="6" stroke-linejoin="round"/>
+    <rect x="98" y="205" width="60" height="10" rx="5" fill="url(#ac)"/>
+  </g>
+  <g font-family="Inter, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+    <text x="430" y="206" font-size="104" font-weight="300" fill="#f1f5f9" letter-spacing="-2">Tesla<tspan font-weight="800" fill="url(#tx)">Cinema</tspan></text>
+    <text x="434" y="262" font-size="32" fill="#94a3b8">Your own streaming browser for the car screen.</text>
+    <g font-size="22" fill="#cbd5e1">
+      <rect x="434" y="296" width="214" height="44" rx="22" fill="#ffffff" fill-opacity="0.07"/><text x="458" y="326">Picture + sound</text>
+      <rect x="664" y="296" width="176" height="44" rx="22" fill="#ffffff" fill-opacity="0.07"/><text x="688" y="326">Touch + keys</text>
+      <rect x="856" y="296" width="168" height="44" rx="22" fill="#ffffff" fill-opacity="0.07"/><text x="880" y="326">Self-hosted</text>
+      <rect x="1040" y="296" width="184" height="44" rx="22" fill="#ffffff" fill-opacity="0.07"/><text x="1064" y="326">One command</text>
+    </g>
+  </g>
+</svg>

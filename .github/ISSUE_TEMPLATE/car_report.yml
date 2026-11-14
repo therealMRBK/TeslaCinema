@@ -1,0 +1,20 @@
+name: Real-car report
+description: You tried it in a car - tell us how it went
+labels: [car-report]
+body:
+  - type: input
+    id: car
+    attributes:
+      label: Car and software version
+      placeholder: "Model Y, software 2026.x"
+    validations: { required: true }
+  - type: dropdown
+    id: result
+    attributes:
+      label: Did it work?
+      options: [Works well, Works with problems, Does not work]
+    validations: { required: true }
+  - type: textarea
+    id: details
+    attributes:
+      label: Picture, sound, touch, keyboard, delay, connection type

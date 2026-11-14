@@ -1,0 +1,8 @@
+# Optional: pass the host's Intel/AMD GPU (/dev/dri) into the container so Chrome decodes video in hardware.
+# Use it on top of the main file:
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+# Needs a host with /dev/dri (check: ls /dev/dri). Without a GPU just leave this file out - it works fine in software.
+services:
+  app:
+    devices:
+      - /dev/dri:/dev/dri

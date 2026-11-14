@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Please do **not** paste your `.env`, password or tunnel token."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations: { required: true }
+  - type: input
+    id: host
+    attributes:
+      label: Host (CPU, OS, Docker version)
+      placeholder: "x86-64 mini PC, Ubuntu 24.04, Docker 27"
+    validations: { required: true }
+  - type: dropdown
+    id: access
+    attributes:
+      label: How do you reach it?
+      options: [Cloudflare quick tunnel, Cloudflare named tunnel, Caddy, Nginx Proxy Manager, nginx, Traefik, LAN http, Other]
+    validations: { required: true }
+  - type: input
+    id: viewer
+    attributes:
+      label: Viewing browser / car
+      placeholder: "Car browser, Chrome 140 on Windows, ..."
+  - type: textarea
+    id: status
+    attributes:
+      label: Status line from the bottom right of the page
+      placeholder: "Tesla A/V (WebSocket) · 30 fps · 2.6 Mbit/s"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (`docker compose logs --tail 200 app`)
+      render: text

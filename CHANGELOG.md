@@ -1,0 +1,14 @@
+# Changelog
+
+## 1.0.0 - first public release
+
+TeslaCinema grew out of a private remote-browser tool. This is the first standalone, public version.
+
+- Real Google Chrome on a virtual display, streamed with sound as one MPEG-TS stream, WebSocket with long-polling fallback
+- Touch and keyboard made for a car screen, including an automatic on-screen keyboard
+- **Built-in login** (HTTP Basic Auth) with a generated password; refuses to start without one
+- `setup.sh`: one command, random password, picks Cloudflare quick tunnel / Caddy + own domain / LAN / own proxy
+- Compose profiles for Caddy and Cloudflare Tunnel, optional GPU file
+- Configurable language (`LOCALE`, `CHROME_LANG`)
+- Removed from the private tool: the Discord launcher and the terminal button
+- Full documentation in `docs/`

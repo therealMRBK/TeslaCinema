@@ -1,0 +1,7 @@
+# Used by the "caddy" compose profile. Caddy fetches and renews the Let's Encrypt certificate for $DOMAIN by itself.
+{$DOMAIN} {
+	reverse_proxy app:3000 {
+		# the picture and sound arrive as long polls / a WebSocket: never buffer them
+		flush_interval -1
+	}
+}

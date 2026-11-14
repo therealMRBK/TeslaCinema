@@ -1,0 +1,77 @@
+# TeslaCinema. Start with:  docker compose up -d --build       (setup.sh does this and creates .env for you)
+#
+# Optional extras (add them with --profile, or let ./setup.sh pick):
+#   --profile caddy        automatic HTTPS for your own domain      (docs/https-caddy.md)
+#   --profile cloudflared  public https URL with no port forwarding  (docs/https-cloudflare-tunnel.md)
+#   --profile cloudflared-token   the same with your own fixed address (same guide)
+# GPU for smoother video on Intel/AMD hosts:  -f docker-compose.yml -f docker-compose.gpu.yml   (docs/gpu.md)
+
+services:
+  app:
+    build: .
+    image: teslacinema:latest
+    container_name: teslacinema
+    restart: unless-stopped
+    init: true               # reaps zombie processes when Chrome crashes
+    shm_size: "1gb"          # Chrome crashes with the default 64 MB
+    # Published on the loopback by default: reach it through the https front end (caddy / cloudflared / your own proxy)
+    # or set BIND_ADDRESS=0.0.0.0 in .env to open it on your LAN (plain http, fine for a first test at home).
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${HOST_PORT:-8195}:3000"
+    environment:
+      AUTH_USER: ${AUTH_USER:-cinema}
+      AUTH_PASSWORD: ${AUTH_PASSWORD?Run ./setup.sh first, or set AUTH_PASSWORD in .env}
+      ALLOW_NO_AUTH: ${ALLOW_NO_AUTH:-0}
+      LOCALE: ${LOCALE:-en_US.UTF-8}
+      CHROME_LANG: ${CHROME_LANG:-}
+      DISPLAY_WIDTH: ${DISPLAY_WIDTH:-1920}
+      DISPLAY_HEIGHT: ${DISPLAY_HEIGHT:-1080}
+      AV_BITRATE: ${AV_BITRATE:-3500k}
+      AV_FPS: ${AV_FPS:-30}
+      AV_MAX_BEHIND_MS: ${AV_MAX_BEHIND_MS:-400}
+    volumes:
+      - teslacinema-data:/data   # Chrome profile (your logins) and the shared file folder
+
+  # --- profile "caddy": HTTPS with a certificate from Let's Encrypt, for a domain that points at this machine ---
+  caddy:
+    profiles: ["caddy"]
+    image: caddy:2
+    container_name: teslacinema-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - app
+
+  # --- profile "cloudflared": a public https address through Cloudflare, no open ports, no domain needed.
+  # A throw-away "quick tunnel": the address is random and changes whenever the container restarts (see its logs).
+  cloudflared:
+    profiles: ["cloudflared"]
+    image: cloudflare/cloudflared:latest
+    container_name: teslacinema-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://app:3000
+    depends_on:
+      - app
+
+  # --- profile "cloudflared-token": your own named Cloudflare tunnel with a fixed address (needs a free Cloudflare
+  # account and a domain on it). Create the tunnel in the Zero Trust dashboard, point its public hostname at
+  # http://app:3000 and put the token into .env as CLOUDFLARE_TUNNEL_TOKEN.
+  cloudflared-token:
+    profiles: ["cloudflared-token"]
+    image: cloudflare/cloudflared:latest
+    container_name: teslacinema-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+
+volumes:
+  teslacinema-data:
+  caddy-data:
