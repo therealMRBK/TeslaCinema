@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Fewer sound and picture dropouts: bigger rate-control buffer (`AV_BUFSIZE`, default `4M`) and larger capture queues
+- Chrome no longer starts with the zero-copy / native GPU buffer / VAAPI encoder flags (they crashed the GPU process on one setup)
+- The server logs `[av] stream stalled N ms` when the stream pauses
+
 ## 1.0.0 - first public release
 
 TeslaCinema grew out of a private remote-browser tool. This is the first standalone, public version.

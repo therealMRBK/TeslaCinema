@@ -225,6 +225,8 @@ const h264 = Object.assign(makePipeline("h264"), {
 // (MPEG-1 video, MP2 audio), so both carry timestamps of the same clock. The page decodes it with JSMpeg onto a canvas and
 // plays the sound through Web Audio, with the sound as the clock the pictures follow - no <video> element anywhere.
 const AV_BITRATE = process.env.AV_BITRATE || "3500k";
+// rate-control buffer: 2M ran dry on fast motion ("rc buffer underflow" = blocky or stuttering picture)
+const AV_BUFSIZE = process.env.AV_BUFSIZE || "4M";
 const AV_FPS = parseInt(process.env.AV_FPS || "30", 10); // MPEG-1 knows 24, 25, 30, 50 and 60 among others
 const AV_MAX_BEHIND_MS = parseInt(process.env.AV_MAX_BEHIND_MS || "400", 10);
 const AV_KEEP_MS = 4000;
@@ -269,11 +271,11 @@ function pipelineArgs(p) {
   if (p === av) {
     return [
       "-loglevel", "error",
-      "-thread_queue_size", "64", "-f", "x11grab", "-draw_mouse", "0", "-framerate", String(AV_FPS), "-video_size", `${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}`, "-i", DISPLAY,
+      "-thread_queue_size", "128", "-f", "x11grab", "-draw_mouse", "0", "-framerate", String(AV_FPS), "-video_size", `${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}`, "-i", DISPLAY,
       // small pulse fragments: the muxer waits for the sound before it writes the pictures of the same moment
-      "-thread_queue_size", "64", "-f", "pulse", "-fragment_size", "3840", "-i", "chrome_out.monitor",
+      "-thread_queue_size", "512", "-f", "pulse", "-fragment_size", "3840", "-i", "chrome_out.monitor",
       "-map", "0:v", "-map", "1:a",
-      "-c:v", "mpeg1video", "-b:v", AV_BITRATE, "-maxrate", AV_BITRATE, "-bufsize", "2M", "-g", String(AV_FPS), "-bf", "0", "-fps_mode", "cfr", "-r", String(AV_FPS),
+      "-c:v", "mpeg1video", "-b:v", AV_BITRATE, "-maxrate", AV_BITRATE, "-bufsize", AV_BUFSIZE, "-g", String(AV_FPS), "-bf", "0", "-fps_mode", "cfr", "-r", String(AV_FPS),
       "-c:a", "mp2", "-b:a", "128k", "-ac", "2", "-ar", "48000",
       // every audio frame in its own packet (by default the muxer collects ~170 ms of them), nothing held back
       "-f", "mpegts", "-pes_payload_size", "0", "-omit_video_pes_length", "0", "-muxdelay", "0", "-muxpreload", "0", "-max_interleave_delta", "100000", "-flush_packets", "1",
@@ -379,6 +381,9 @@ function parseTsChunk(chunk) {
   av.buffer = av.buffer.subarray(whole);
   av.produced++;
   const now = Date.now();
+  // log gaps in the stream, so dropouts can be matched with a time afterwards
+  if (av.lastOutAt && now - av.lastOutAt > 300) console.warn(`[av] stream stalled ${now - av.lastOutAt} ms`);
+  av.lastOutAt = now;
   av.chunks.push({ seq: ++av.seq, t: now, data, gop: tsGopOffset(data) });
   pushToSockets();
   // keep a few seconds, and always the newest starting point
@@ -862,7 +867,7 @@ async function initDesktop() {
     `--window-size=${DISPLAY_WIDTH},${DISPLAY_HEIGHT}`,
     // With a GPU passed through (/dev/dri), Chrome renders and decodes video on it; without one it falls back to software.
     ...(HAS_GPU
-      ? ["--ignore-gpu-blocklist", "--disable-gpu-sandbox", "--use-gl=angle", "--use-angle=gl", "--enable-gpu-rasterization", "--enable-zero-copy", "--enable-native-gpu-memory-buffers", "--enable-features=VaapiVideoDecoder,VaapiVideoEncoder"]
+      ? ["--ignore-gpu-blocklist", "--disable-gpu-sandbox", "--use-gl=angle", "--use-angle=gl", "--enable-gpu-rasterization", "--enable-features=VaapiVideoDecoder"]
       : []),
     "--remote-debugging-address=127.0.0.1",
     `--remote-debugging-port=${CDP_PORT}`,

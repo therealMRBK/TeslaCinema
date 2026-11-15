@@ -19,6 +19,7 @@ docker compose up -d
 | `CHROME_LANG` | *(from LOCALE)* | Override Chrome's UI language, e.g. `de`, `fr`, `en-GB` |
 | `DISPLAY_WIDTH` / `DISPLAY_HEIGHT` | `1920` / `1080` | Start size of the virtual screen (it then follows the viewer's browser window) |
 | `AV_BITRATE` | `3500k` | Video bitrate of the stream |
+| `AV_BUFSIZE` | `4M` | Rate-control buffer of the video encoder. Raise it (`6M`) if the log shows `rc buffer underflow` during fast motion |
 | `AV_FPS` | `30` | Frame rate of the stream (MPEG-1 allows 24, 25, 30, 50, 60) |
 | `AV_MAX_BEHIND_MS` | `400` | How far the viewer may lag before the stream jumps to the newest frame |
 | `DOMAIN` | | Your domain, for the `caddy` profile |
